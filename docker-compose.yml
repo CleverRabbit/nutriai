@@ -1,0 +1,15 @@
+services:
+  nutri-ai:
+    build: .
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - NODE_ENV=production
+    volumes:
+      - nutri-data:/app/data
+    restart: always
+
+volumes:
+  nutri-data:

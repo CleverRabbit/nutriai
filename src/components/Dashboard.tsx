@@ -1,0 +1,194 @@
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { toast } from "sonner";
+import { Activity, Flame, UtensilsCrossed, Plus } from 'lucide-react';
+
+export default function Dashboard({ token }: { token: string }) {
+  const [members, setMembers] = useState<any[]>([]);
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [plan, setPlan] = useState<any>({});
+  const [exerciseDesc, setExerciseDesc] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const fetchFamily = async () => {
+    const res = await fetch('/api/family', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    setMembers(data);
+    if (data.length > 0 && !selectedMemberId) {
+      setSelectedMemberId(data[0].id.toString());
+    }
+  };
+
+  const fetchData = async (memberId: string) => {
+    try {
+      const [logsRes, planRes] = await Promise.all([
+        fetch(`/api/logs?memberId=${memberId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
+        fetch(`/api/plan/${memberId}`, { headers: { 'Authorization': `Bearer ${token}` } })
+      ]);
+      setLogs(await logsRes.json());
+      setPlan(await planRes.json());
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchFamily();
+  }, [token]);
+
+  useEffect(() => {
+    if (selectedMemberId) {
+      fetchData(selectedMemberId);
+    }
+  }, [selectedMemberId, token]);
+
+  const handleExercise = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMemberId) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/logs/exercise', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ member_id: selectedMemberId, description: exerciseDesc })
+      });
+      const data = await res.json();
+      toast.success(`Записано: ${data.description} (${data.kcal} ккал)`);
+      setExerciseDesc('');
+      fetchData(selectedMemberId);
+    } catch (err) {
+      toast.error("Не удалось записать упражнение");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const today = new Date().toISOString().split('T')[0];
+  const todayLogs = logs.filter(l => l.timestamp.startsWith(today));
+  
+  const consumedKcal = todayLogs.reduce((acc, l) => acc + (l.type === 'food' ? l.kcal : 0), 0);
+  const burnedKcal = Math.abs(todayLogs.reduce((acc, l) => acc + (l.type === 'exercise' ? l.kcal : 0), 0));
+  const netKcal = consumedKcal - burnedKcal;
+
+  const protein = todayLogs.reduce((acc, l) => acc + (l.protein_g || 0), 0);
+  const fat = todayLogs.reduce((acc, l) => acc + (l.fat_g || 0), 0);
+  const carbs = todayLogs.reduce((acc, l) => acc + (l.carbs_g || 0), 0);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Обзор активности</h2>
+        <div className="flex items-center gap-2">
+          <Label className="whitespace-nowrap">Показать для:</Label>
+          <select 
+            className="p-2 rounded-md border border-neutral-200 text-sm bg-white"
+            value={selectedMemberId || ''}
+            onChange={(e) => setSelectedMemberId(e.target.value)}
+          >
+            {members.map(m => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="bg-orange-50 border-orange-100">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-orange-600 flex items-center gap-2">
+              <Flame size={16} />
+              Калории
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-900">{netKcal} / {plan.daily_kcal || 0}</div>
+            <p className="text-xs text-orange-600 mt-1">
+              {consumedKcal} съедено, {burnedKcal} сожжено
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-blue-50 border-blue-100">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-blue-600 flex items-center gap-2">
+              <UtensilsCrossed size={16} />
+              БЖУ (Б/Ж/У)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-900">{protein}г / {fat}г / {carbs}г</div>
+            <p className="text-xs text-blue-600 mt-1">
+              Цель: {plan.protein_g || 0}г / {plan.fat_g || 0}г / {plan.carbs_g || 0}г
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-green-50 border-green-100">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-green-600 flex items-center gap-2">
+              <Activity size={16} />
+              Активность
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleExercise} className="flex gap-2">
+              <Input 
+                placeholder="Пробежка 5км..." 
+                value={exerciseDesc}
+                onChange={(e) => setExerciseDesc(e.target.value)}
+                className="bg-white border-green-200"
+              />
+              <Button size="icon" className="bg-green-600 hover:bg-green-700 shrink-0" disabled={loading}>
+                <Plus size={18} />
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Последняя активность</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-[300px] pr-4">
+            <div className="space-y-4">
+              {logs.map((log) => (
+                <div key={log.id} className="flex items-center justify-between p-3 bg-neutral-50 rounded-lg border border-neutral-100">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${log.type === 'food' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                      {log.type === 'food' ? <UtensilsCrossed size={18} /> : <Activity size={18} />}
+                    </div>
+                    <div>
+                      <p className="font-medium text-neutral-900">{log.description}</p>
+                      <p className="text-xs text-neutral-500">{new Date(log.timestamp).toLocaleString()}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <Badge variant={log.type === 'food' ? 'default' : 'secondary'} className={log.type === 'food' ? 'bg-orange-100 text-orange-700 hover:bg-orange-100' : 'bg-green-100 text-green-700 hover:bg-green-100'}>
+                      {log.type === 'food' ? `+${log.kcal}` : `${log.kcal}`} ккал
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+              {logs.length === 0 && (
+                <div className="text-center py-8 text-neutral-400">Активность пока не записана.</div>
+              )}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
