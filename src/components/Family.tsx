@@ -36,7 +36,7 @@ export default function Family({ token }: { token: string }) {
 
   useEffect(() => {
     fetchFamily();
-  }, []);
+  }, [token]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();

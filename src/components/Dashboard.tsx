@@ -135,6 +135,9 @@ export default function Dashboard({ token }: { token: string }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Обзор активности</h2>
         <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => selectedMemberId && fetchData(selectedMemberId)}>
+            Обновить
+          </Button>
           <Button variant="outline" size="sm" onClick={handleExport}>
             Экспорт в Excel
           </Button>

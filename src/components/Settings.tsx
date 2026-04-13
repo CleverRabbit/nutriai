@@ -32,7 +32,7 @@ export default function Settings({ token }: { token: string }) {
   const handleSave = async () => {
     setLoading(true);
     try {
-      await fetch('/api/settings', {
+      const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
@@ -40,6 +40,7 @@ export default function Settings({ token }: { token: string }) {
         },
         body: JSON.stringify(settings)
       });
+      if (!res.ok) throw new Error();
       toast.success("Настройки сохранены, Бот перезапущен");
     } catch (err) {
       toast.error("Не удалось сохранить настройки");
@@ -48,8 +49,30 @@ export default function Settings({ token }: { token: string }) {
     }
   };
 
+  const handleExport = () => {
+    window.open(`/api/export/xlsx?token=${token}`, '_blank');
+  };
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck size={20} className="text-green-500" />
+            Управление данными
+          </CardTitle>
+          <CardDescription>Экспорт и резервное копирование вашей информации</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col sm:flex-row gap-4">
+          <Button onClick={handleExport} variant="outline" className="flex-1">
+            Скачать все данные (Excel)
+          </Button>
+          <p className="text-xs text-neutral-500 sm:max-w-[200px]">
+            Рекомендуется регулярно скачивать данные для обеспечения их сохранности.
+          </p>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

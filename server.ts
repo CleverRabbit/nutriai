@@ -85,8 +85,13 @@ async function startServer() {
 
   app.post("/api/inventory", authenticate, (req: any, res) => {
     const { name, quantity, unit } = req.body;
-    db.prepare("INSERT INTO inventory (user_id, name, quantity, unit) VALUES (?, ?, ?, ?)").run(req.user.id, name, quantity, unit);
-    res.json({ success: true });
+    try {
+      db.prepare("INSERT INTO inventory (user_id, name, quantity, unit) VALUES (?, ?, ?, ?)").run(req.user.id, name, quantity, unit);
+      res.json({ success: true });
+    } catch (e) {
+      console.error("Inventory Add Error:", e);
+      res.status(500).json({ error: "Ошибка при добавлении продукта" });
+    }
   });
 
   app.delete("/api/inventory/:id", authenticate, (req: any, res) => {
@@ -123,11 +128,13 @@ async function startServer() {
   app.get("/api/logs", authenticate, (req: any, res) => {
     const { memberId } = req.query;
     let query = "SELECT * FROM logs WHERE user_id = ?";
-    let params = [req.user.id];
-    if (memberId) {
+    let params: any[] = [req.user.id];
+    
+    if (memberId && memberId !== 'null' && memberId !== 'undefined') {
       query += " AND member_id = ?";
       params.push(memberId);
     }
+    
     query += " ORDER BY timestamp DESC LIMIT 100";
     const logs = db.prepare(query).all(...params);
     res.json(logs);
