@@ -14,7 +14,9 @@ export default function Dashboard({ token }: { token: string }) {
   const [logs, setLogs] = useState<any[]>([]);
   const [plan, setPlan] = useState<any>({});
   const [exerciseDesc, setExerciseDesc] = useState('');
+  const [foodInput, setFoodInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [analyzingFood, setAnalyzingFood] = useState(false);
 
   const fetchFamily = async () => {
     const res = await fetch('/api/family', {
@@ -63,6 +65,7 @@ export default function Dashboard({ token }: { token: string }) {
         },
         body: JSON.stringify({ member_id: selectedMemberId, description: exerciseDesc })
       });
+      if (!res.ok) throw new Error();
       const data = await res.json();
       toast.success(`Записано: ${data.description} (${data.kcal} ккал)`);
       setExerciseDesc('');
@@ -72,6 +75,48 @@ export default function Dashboard({ token }: { token: string }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFoodAnalyze = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAnalyzingFood(true);
+    try {
+      const res = await fetch('/api/logs/food/analyze', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ input: foodInput })
+      });
+      const data = await res.json();
+      
+      if (data.needs_clarification) {
+        toast.info(data.needs_clarification);
+        setFoodInput(foodInput + " "); // Keep input for user to clarify
+      } else {
+        // Auto-log if clear
+        await fetch('/api/logs/food', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(data)
+        });
+        toast.success(`Записано: ${data.description}`);
+        setFoodInput('');
+        if (selectedMemberId) fetchData(selectedMemberId);
+      }
+    } catch (err) {
+      toast.error("Ошибка анализа еды");
+    } finally {
+      setAnalyzingFood(false);
+    }
+  };
+
+  const handleExport = () => {
+    window.open(`/api/export/xlsx?token=${token}`, '_blank');
   };
 
   const today = new Date().toISOString().split('T')[0];
@@ -89,17 +134,22 @@ export default function Dashboard({ token }: { token: string }) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-neutral-900 tracking-tight">Обзор активности</h2>
-        <div className="flex items-center gap-2">
-          <Label className="whitespace-nowrap">Показать для:</Label>
-          <select 
-            className="p-2 rounded-md border border-neutral-200 text-sm bg-white"
-            value={selectedMemberId || ''}
-            onChange={(e) => setSelectedMemberId(e.target.value)}
-          >
-            {members.map(m => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={handleExport}>
+            Экспорт в Excel
+          </Button>
+          <div className="flex items-center gap-2">
+            <Label className="whitespace-nowrap">Показать для:</Label>
+            <select 
+              className="p-2 rounded-md border border-neutral-200 text-sm bg-white"
+              value={selectedMemberId || ''}
+              onChange={(e) => setSelectedMemberId(e.target.value)}
+            >
+              {members.map(m => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -138,18 +188,29 @@ export default function Dashboard({ token }: { token: string }) {
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-green-600 flex items-center gap-2">
               <Activity size={16} />
-              Активность
+              Быстрая запись
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-2">
             <form onSubmit={handleExercise} className="flex gap-2">
               <Input 
-                placeholder="Пробежка 5км..." 
+                placeholder="Активность (бег 5км...)" 
                 value={exerciseDesc}
                 onChange={(e) => setExerciseDesc(e.target.value)}
-                className="bg-white border-green-200"
+                className="bg-white border-green-200 text-xs"
               />
               <Button size="icon" className="bg-green-600 hover:bg-green-700 shrink-0" disabled={loading}>
+                <Plus size={18} />
+              </Button>
+            </form>
+            <form onSubmit={handleFoodAnalyze} className="flex gap-2">
+              <Input 
+                placeholder="Еда (съел 2 яйца...)" 
+                value={foodInput}
+                onChange={(e) => setFoodInput(e.target.value)}
+                className="bg-white border-orange-200 text-xs"
+              />
+              <Button size="icon" className="bg-orange-600 hover:bg-orange-700 shrink-0" disabled={analyzingFood}>
                 <Plus size={18} />
               </Button>
             </form>

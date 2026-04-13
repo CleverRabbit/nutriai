@@ -52,13 +52,42 @@ export default function Inventory({ token }: { token: string }) {
     toast.info("Продукт удален");
   };
 
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/import/xlsx', {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      
+      toast.success(`Импортировано продуктов: ${data.count}`);
+      fetchInventory();
+    } catch (err: any) {
+      toast.error(err.message || "Ошибка при импорте");
+    } finally {
+      setLoading(false);
+      e.target.value = ''; // Reset input
+    }
+  };
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       <Card className="md:col-span-1">
         <CardHeader>
           <CardTitle>Добавить продукт</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <form onSubmit={handleAdd} className="space-y-4">
             <div className="space-y-2">
               <Label>Название продукта</Label>
@@ -95,6 +124,31 @@ export default function Inventory({ token }: { token: string }) {
               <Plus size={18} className="mr-2" /> Добавить в кладовую
             </Button>
           </form>
+
+          <div className="pt-4 border-t border-neutral-100">
+            <Label className="block mb-2 text-xs font-semibold text-neutral-500 uppercase tracking-wider">Массовый импорт</Label>
+            <div className="relative">
+              <Input 
+                type="file" 
+                accept=".xlsx, .xls" 
+                onChange={handleImport}
+                className="hidden" 
+                id="excel-import"
+                disabled={loading}
+              />
+              <Button 
+                variant="outline" 
+                className="w-full border-dashed border-2"
+                onClick={() => document.getElementById('excel-import')?.click()}
+                disabled={loading}
+              >
+                {loading ? 'Загрузка...' : 'Загрузить из Excel'}
+              </Button>
+            </div>
+            <p className="mt-2 text-[10px] text-neutral-400 text-center">
+              Файл должен содержать лист "Инвентарь" с колонками: name, quantity, unit
+            </p>
+          </div>
         </CardContent>
       </Card>
 

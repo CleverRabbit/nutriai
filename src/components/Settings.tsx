@@ -104,6 +104,12 @@ export default function Settings({ token }: { token: string }) {
                 </span>
               </div>
               <div className="flex justify-between items-center text-sm">
+                <span className="text-neutral-500">Связь с Gemini:</span>
+                <span className={health.gemini === 'connected' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                  {health.gemini === 'connected' ? 'Подключено' : 'Ошибка'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
                 <span className="text-neutral-500">Менеджер бота:</span>
                 <span className="text-blue-600 font-medium">{health.bot === 'initialized' ? 'Инициализирован' : 'Не запущен'}</span>
               </div>
