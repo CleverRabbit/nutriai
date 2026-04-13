@@ -24,7 +24,18 @@ async function startServer() {
     if (!token) return res.status(401).json({ error: "Неавторизован" });
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      req.user = decoded;
+      
+      // Ensure ID is a number
+      const userId = Number(decoded.id);
+      
+      // Verify user still exists in DB
+      const user = db.prepare("SELECT id FROM users WHERE id = ?").get(userId);
+      if (!user) {
+        console.warn(`Auth failed: User ${userId} not found in DB`);
+        return res.status(401).json({ error: "Сессия истекла, пожалуйста, войдите снова" });
+      }
+      
+      req.user = { ...decoded, id: userId };
       next();
     } catch (e) {
       res.status(401).json({ error: "Неверный токен" });
@@ -85,8 +96,10 @@ async function startServer() {
 
   app.post("/api/inventory", authenticate, (req: any, res) => {
     const { name, quantity, unit } = req.body;
+    console.log(`Adding inventory for user ${req.user.id}: ${name} ${quantity}${unit}`);
     try {
-      db.prepare("INSERT INTO inventory (user_id, name, quantity, unit) VALUES (?, ?, ?, ?)").run(req.user.id, name, quantity, unit);
+      const result = db.prepare("INSERT INTO inventory (user_id, name, quantity, unit) VALUES (?, ?, ?, ?)").run(req.user.id, name, quantity, unit);
+      console.log("Insert result:", result);
       res.json({ success: true });
     } catch (e) {
       console.error("Inventory Add Error:", e);
@@ -143,20 +156,51 @@ async function startServer() {
   app.post("/api/logs/food", authenticate, (req: any, res) => {
     const { member_ids, description, kcal, protein_g, fat_g, carbs_g, consumed_items } = req.body;
     
-    // Log for each member
-    for (const memberId of member_ids) {
-      db.prepare("INSERT INTO logs (user_id, member_id, type, description, kcal, protein_g, fat_g, carbs_g) VALUES (?, ?, 'food', ?, ?, ?, ?, ?)").run(
-        req.user.id, memberId, description, kcal, protein_g, fat_g, carbs_g
-      );
+    if (!member_ids || !Array.isArray(member_ids) || member_ids.length === 0) {
+      console.error("Food Log Error: No member_ids provided", req.body);
+      return res.status(400).json({ error: "Не указано, кто ел" });
     }
 
-    // Update shared inventory
-    if (consumed_items) {
-      for (const item of consumed_items) {
-        db.prepare("UPDATE inventory SET quantity = quantity - ? WHERE user_id = ? AND name = ?").run(item.amount, req.user.id, item.name);
-      }
+    console.log(`Logging food for user ${req.user.id}, members: ${member_ids}, items: ${JSON.stringify(consumed_items)}`);
+    
+    try {
+      const transaction = db.transaction(() => {
+        // Log for each member
+        for (const memberId of member_ids) {
+          // Ensure memberId is a number
+          const mId = parseInt(memberId.toString());
+          if (isNaN(mId)) {
+            throw new Error(`Invalid member ID: ${memberId}`);
+          }
+
+          db.prepare("INSERT INTO logs (user_id, member_id, type, description, kcal, protein_g, fat_g, carbs_g) VALUES (?, ?, 'food', ?, ?, ?, ?, ?)").run(
+            req.user.id, mId, description, kcal || 0, protein_g || 0, fat_g || 0, carbs_g || 0
+          );
+        }
+
+        // Update shared inventory
+        if (consumed_items && Array.isArray(consumed_items)) {
+          for (const item of consumed_items) {
+            if (!item.name || !item.amount) continue;
+            
+            console.log(`Updating inventory: -${item.amount} of ${item.name}`);
+            // Use case-insensitive matching for inventory names
+            const result = db.prepare("UPDATE inventory SET quantity = quantity - ? WHERE user_id = ? AND LOWER(name) = LOWER(?)").run(
+              item.amount, req.user.id, item.name.trim()
+            );
+            if (result.changes === 0) {
+              console.warn(`Inventory item not found or not updated: ${item.name}`);
+            }
+          }
+        }
+      });
+      
+      transaction();
+      res.json({ success: true });
+    } catch (e) {
+      console.error("Food Log Error:", e);
+      res.status(500).json({ error: e instanceof Error ? e.message : "Ошибка при сохранении лога еды" });
     }
-    res.json({ success: true });
   });
 
   app.post("/api/logs/exercise", authenticate, async (req: any, res) => {
@@ -179,8 +223,10 @@ async function startServer() {
     
     try {
       const result = await analyzeFoodInput(input, inventory, family);
+      console.log("Gemini Food Analysis Result:", JSON.stringify(result));
       res.json(result);
     } catch (e) {
+      console.error("Gemini Food Analysis Error:", e);
       res.status(500).json({ error: "Ошибка анализа еды" });
     }
   });
@@ -276,17 +322,32 @@ async function startServer() {
   // Self-Diagnostics
   app.get("/api/health", async (req, res) => {
     try {
-      db.prepare("SELECT 1").get();
+      const userCount = db.prepare("SELECT COUNT(*) as count FROM users").get() as any;
+      const invCount = db.prepare("SELECT COUNT(*) as count FROM inventory").get() as any;
       const geminiStatus = await checkGeminiHealth();
       res.json({ 
         status: "ok", 
         database: "connected", 
+        stats: {
+          users: userCount.count,
+          inventory: invCount.count
+        },
         gemini: geminiStatus,
         bot: botManager ? "initialized" : "null" 
       });
     } catch (e) {
       res.status(500).json({ status: "error", message: String(e) });
     }
+  });
+
+  app.get("/api/debug/me", authenticate, (req: any, res) => {
+    const user = db.prepare("SELECT id, email FROM users WHERE id = ?").get(req.user.id);
+    res.json({
+      token_user: req.user,
+      db_user: user,
+      cwd: process.cwd(),
+      db_path: path.join(process.cwd(), 'data.db')
+    });
   });
 
   // Vite middleware for development

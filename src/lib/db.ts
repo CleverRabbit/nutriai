@@ -1,10 +1,11 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 
-const dbPath = path.join(process.cwd(), 'data.db');
+const dbPath = path.resolve(process.cwd(), 'data.db');
 const db = new Database(dbPath);
 
 // Initialize tables
+db.exec("PRAGMA foreign_keys = ON;");
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

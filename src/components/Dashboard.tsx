@@ -6,7 +6,16 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
-import { Activity, Flame, UtensilsCrossed, Plus } from 'lucide-react';
+import { Activity, Flame, UtensilsCrossed, Plus, ListPlus } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export default function Dashboard({ token }: { token: string }) {
   const [members, setMembers] = useState<any[]>([]);
@@ -17,6 +26,15 @@ export default function Dashboard({ token }: { token: string }) {
   const [foodInput, setFoodInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [analyzingFood, setAnalyzingFood] = useState(false);
+  const [manualFood, setManualFood] = useState({
+    description: '',
+    kcal: '',
+    protein: '',
+    fat: '',
+    carbs: '',
+    members: [] as string[]
+  });
+  const [isManualOpen, setIsManualOpen] = useState(false);
 
   const fetchFamily = async () => {
     const res = await fetch('/api/family', {
@@ -35,10 +53,22 @@ export default function Dashboard({ token }: { token: string }) {
         fetch(`/api/logs?memberId=${memberId}`, { headers: { 'Authorization': `Bearer ${token}` } }),
         fetch(`/api/plan/${memberId}`, { headers: { 'Authorization': `Bearer ${token}` } })
       ]);
-      setLogs(await logsRes.json());
-      setPlan(await planRes.json());
+
+      if (logsRes.status === 401 || planRes.status === 401) {
+        localStorage.removeItem('token');
+        window.location.reload();
+        return;
+      }
+
+      const logsData = await logsRes.json();
+      const planData = await planRes.json();
+
+      setLogs(Array.isArray(logsData) ? logsData : []);
+      setPlan(planData || {});
     } catch (err) {
       console.error(err);
+      setLogs([]);
+      setPlan({});
     }
   };
 
@@ -77,6 +107,41 @@ export default function Dashboard({ token }: { token: string }) {
     }
   };
 
+  const handleManualFood = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (manualFood.members.length === 0) {
+      toast.error("Выберите хотя бы одного члена семьи");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch('/api/logs/food', {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          member_ids: manualFood.members,
+          description: manualFood.description,
+          kcal: parseInt(manualFood.kcal) || 0,
+          protein_g: parseInt(manualFood.protein) || 0,
+          fat_g: parseInt(manualFood.fat) || 0,
+          carbs_g: parseInt(manualFood.carbs) || 0
+        })
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Запись добавлена");
+      setManualFood({ description: '', kcal: '', protein: '', fat: '', carbs: '', members: [] });
+      setIsManualOpen(false);
+      if (selectedMemberId) fetchData(selectedMemberId);
+    } catch (err) {
+      toast.error("Ошибка при сохранении");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleFoodAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     setAnalyzingFood(true);
@@ -91,12 +156,20 @@ export default function Dashboard({ token }: { token: string }) {
       });
       const data = await res.json();
       
+      // Fallback: if member_ids contains names instead of IDs, map them
+      if (data.member_ids && data.member_ids.length > 0) {
+        data.member_ids = data.member_ids.map((idOrName: string) => {
+          const member = members.find(m => m.id.toString() === idOrName || m.name.toLowerCase() === idOrName.toLowerCase());
+          return member ? member.id.toString() : idOrName;
+        });
+      }
+      
       if (data.needs_clarification) {
         toast.info(data.needs_clarification);
         setFoodInput(foodInput + " "); // Keep input for user to clarify
       } else {
         // Auto-log if clear
-        await fetch('/api/logs/food', {
+        const logRes = await fetch('/api/logs/food', {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json',
@@ -104,9 +177,15 @@ export default function Dashboard({ token }: { token: string }) {
           },
           body: JSON.stringify(data)
         });
-        toast.success(`Записано: ${data.description}`);
-        setFoodInput('');
-        if (selectedMemberId) fetchData(selectedMemberId);
+        
+        if (logRes.ok) {
+          toast.success(`Записано: ${data.description}`);
+          setFoodInput('');
+          if (selectedMemberId) fetchData(selectedMemberId);
+        } else {
+          const errData = await logRes.json();
+          toast.error(errData.error || "Ошибка при сохранении лога");
+        }
       }
     } catch (err) {
       toast.error("Ошибка анализа еды");
@@ -196,26 +275,143 @@ export default function Dashboard({ token }: { token: string }) {
           </CardHeader>
           <CardContent className="space-y-2">
             <form onSubmit={handleExercise} className="flex gap-2">
-              <Input 
-                placeholder="Активность (бег 5км...)" 
-                value={exerciseDesc}
-                onChange={(e) => setExerciseDesc(e.target.value)}
-                className="bg-white border-green-200 text-xs"
-              />
+              <div className="relative flex-1">
+                <Input 
+                  placeholder="Активность (бег 5км...)" 
+                  value={exerciseDesc}
+                  onChange={(e) => setExerciseDesc(e.target.value)}
+                  className="bg-white border-green-200 text-xs pr-8 w-full"
+                />
+                {exerciseDesc && (
+                  <button 
+                    type="button"
+                    onClick={() => setExerciseDesc('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 text-lg"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
               <Button size="icon" className="bg-green-600 hover:bg-green-700 shrink-0" disabled={loading}>
-                <Plus size={18} />
+                {loading ? <Activity size={18} className="animate-spin" /> : <Plus size={18} />}
               </Button>
             </form>
             <form onSubmit={handleFoodAnalyze} className="flex gap-2">
-              <Input 
-                placeholder="Еда (съел 2 яйца...)" 
-                value={foodInput}
-                onChange={(e) => setFoodInput(e.target.value)}
-                className="bg-white border-orange-200 text-xs"
-              />
+              <div className="relative flex-1">
+                <Input 
+                  placeholder="Еда (съел 2 яйца...)" 
+                  value={foodInput}
+                  onChange={(e) => setFoodInput(e.target.value)}
+                  className="bg-white border-orange-200 text-xs pr-8 w-full"
+                />
+                {foodInput && (
+                  <button 
+                    type="button"
+                    onClick={() => setFoodInput('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600 text-lg"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
               <Button size="icon" className="bg-orange-600 hover:bg-orange-700 shrink-0" disabled={analyzingFood}>
-                <Plus size={18} />
+                {analyzingFood ? <Activity size={18} className="animate-spin" /> : <Plus size={18} />}
               </Button>
+              
+              <Dialog open={isManualOpen} onOpenChange={setIsManualOpen}>
+                <DialogTrigger render={
+                  <Button size="icon" variant="outline" className="border-orange-200 text-orange-600 shrink-0">
+                    <ListPlus size={18} />
+                  </Button>
+                } />
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>Ручной ввод еды</DialogTitle>
+                    <DialogDescription>
+                      Введите данные о приеме пищи вручную без использования ИИ.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleManualFood} className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Описание</Label>
+                      <Input 
+                        placeholder="Обед: Курица с рисом" 
+                        value={manualFood.description}
+                        onChange={(e) => setManualFood({...manualFood, description: e.target.value})}
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Калории (на чел)</Label>
+                        <Input 
+                          type="number" 
+                          placeholder="500" 
+                          value={manualFood.kcal}
+                          onChange={(e) => setManualFood({...manualFood, kcal: e.target.value})}
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Белки (г)</Label>
+                        <Input 
+                          type="number" 
+                          placeholder="30" 
+                          value={manualFood.protein}
+                          onChange={(e) => setManualFood({...manualFood, protein: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Жиры (г)</Label>
+                        <Input 
+                          type="number" 
+                          placeholder="15" 
+                          value={manualFood.fat}
+                          onChange={(e) => setManualFood({...manualFood, fat: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Углеводы (г)</Label>
+                        <Input 
+                          type="number" 
+                          placeholder="50" 
+                          value={manualFood.carbs}
+                          onChange={(e) => setManualFood({...manualFood, carbs: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Кто ел?</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {members.map(m => (
+                          <Badge 
+                            key={m.id} 
+                            variant={manualFood.members.includes(m.id.toString()) ? "default" : "outline"}
+                            className="cursor-pointer"
+                            onClick={() => {
+                              const id = m.id.toString();
+                              if (manualFood.members.includes(id)) {
+                                setManualFood({...manualFood, members: manualFood.members.filter(mid => mid !== id)});
+                              } else {
+                                setManualFood({...manualFood, members: [...manualFood.members, id]});
+                              }
+                            }}
+                          >
+                            {m.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit" className="w-full bg-orange-600 hover:bg-orange-700" disabled={loading}>
+                        {loading ? 'Сохранение...' : 'Записать'}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
             </form>
           </CardContent>
         </Card>

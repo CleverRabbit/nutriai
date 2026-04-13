@@ -23,25 +23,44 @@ export default function MealPlan({ token }: { token: string }) {
   const [saving, setSaving] = useState(false);
 
   const fetchFamily = async () => {
-    const res = await fetch('/api/family', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setMembers(data);
-    if (data.length > 0 && !selectedMemberId) {
-      setSelectedMemberId(data[0].id.toString());
+    try {
+      const res = await fetch('/api/family', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        window.location.reload();
+        return;
+      }
+      const data = await res.json();
+      setMembers(Array.isArray(data) ? data : []);
+      if (Array.isArray(data) && data.length > 0 && !selectedMemberId) {
+        setSelectedMemberId(data[0].id.toString());
+      }
+    } catch (err) {
+      console.error("Fetch family error:", err);
+      setMembers([]);
     }
   };
 
   const fetchPlan = async (memberId: string) => {
-    const res = await fetch(`/api/plan/${memberId}`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    if (data.daily_kcal) {
-      setPlan(data);
-    } else {
-      setPlan({ daily_kcal: 2000, protein_g: 150, fat_g: 70, carbs_g: 200, summary: '' });
+    try {
+      const res = await fetch(`/api/plan/${memberId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        window.location.reload();
+        return;
+      }
+      const data = await res.json();
+      if (data && data.daily_kcal) {
+        setPlan(data);
+      } else {
+        setPlan({ daily_kcal: 2000, protein_g: 150, fat_g: 70, carbs_g: 200, summary: '' });
+      }
+    } catch (err) {
+      console.error("Fetch plan error:", err);
     }
   };
 

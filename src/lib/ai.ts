@@ -82,13 +82,22 @@ export async function generateMealPlan(inventory: any[], family: any[], history:
 }
 
 export async function analyzeFoodInput(input: string, inventory: any[], family: any[]) {
+  const familyContext = family.map(m => `ID: ${m.id}, Name: ${m.name}`).join('; ');
+  const inventoryContext = inventory.map(i => `Name: ${i.name}, Unit: ${i.unit}`).join('; ');
+
   const prompt = `
     Пользователь приготовил или съел блюдо: "${input}".
-    Текущие запасы: ${JSON.stringify(inventory)}
-    Семья: ${JSON.stringify(family)}
+    
+    Доступные члены семьи: ${familyContext}
+    Доступные продукты в инвентаре: ${inventoryContext}
 
-    Проанализируй ввод и верни JSON.
-    Если неясно, кто ел, спроси. Если неясно количество продуктов, спроси.
+    Твоя задача:
+    1. Определить, кто ел (верни массив их ID). Если неясно, используй ID того, кто вероятнее всего (или всех, если контекст "мы").
+    2. Определить состав блюда и сопоставить с инвентарем.
+    3. Оценить КБЖУ на ОДНОГО человека.
+    4. Если в инвентаре нет точного совпадения по названию, используй наиболее близкое или просто оцени КБЖУ без списания (но старайся списать).
+
+    Верни JSON строго по схеме.
   `;
 
   const response = await ai.models.generateContent({

@@ -13,8 +13,23 @@ export default function Inventory({ token }: { token: string }) {
   const [loading, setLoading] = useState(false);
 
   const fetchInventory = async () => {
-    const res = await fetch('/api/inventory', { headers: { 'Authorization': `Bearer ${token}` } });
-    setItems(await res.json());
+    try {
+      const res = await fetch('/api/inventory', { headers: { 'Authorization': `Bearer ${token}` } });
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        window.location.reload();
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setItems(data);
+      } else {
+        setItems([]);
+      }
+    } catch (err) {
+      console.error("Fetch inventory error:", err);
+      setItems([]);
+    }
   };
 
   useEffect(() => {

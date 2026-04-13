@@ -27,11 +27,21 @@ export default function Family({ token }: { token: string }) {
   });
 
   const fetchFamily = async () => {
-    const res = await fetch('/api/family', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const data = await res.json();
-    setMembers(data);
+    try {
+      const res = await fetch('/api/family', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 401) {
+        localStorage.removeItem('token');
+        window.location.reload();
+        return;
+      }
+      const data = await res.json();
+      setMembers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Fetch family error:", err);
+      setMembers([]);
+    }
   };
 
   useEffect(() => {
